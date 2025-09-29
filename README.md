@@ -322,9 +322,15 @@ Ensure all environment variables are configured in your deployment platform:
 # Frontend build
 npm run build
 
-# Backend build (if needed)
+# Backend build
 cd server && npm run build
 ```
+
+### Deployment Notes
+- The backend uses ES modules - ensure your deployment platform supports Node.js ES modules
+- All TypeScript imports use `.js` extensions for proper ES module compilation
+- Prisma client is generated during the build process
+- The application expects a PostgreSQL database connection
 
 ## 📊 Performance
 
