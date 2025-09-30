@@ -1,6 +1,6 @@
 import { Candidate, Answer, Question } from '../types';
 
-const API_BASE_URL = 'http://localhost:3001/api';
+const API_BASE_URL = 'https://ai-interview-assistance-yw8i.onrender.com/api';
 
 export async function createCandidate(data: {
   name: string;
