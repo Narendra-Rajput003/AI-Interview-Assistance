@@ -68,7 +68,7 @@ const ChatInterface: React.FC = () => {
       if (!timerRef.current) {
         timeLeftRef.current = currentQuestion.timeLimit;
         dispatch(setTimeLeft(currentQuestion.timeLimit));
-        startTimer();
+        // Timer will start when user begins typing
       }
     } else {
       // Stop timer when paused or no question
@@ -84,7 +84,7 @@ const ChatInterface: React.FC = () => {
         timerRef.current = null;
       }
     };
-  }, [currentQuestion?.id, isPaused, currentCandidate?.status, currentCandidate, currentQuestion, dispatch, startTimer]);
+  }, [currentQuestion?.id, isPaused, currentCandidate?.status, currentCandidate, currentQuestion, dispatch]);
 
   // Sync ref with Redux state
   useEffect(() => {
@@ -284,7 +284,13 @@ const ChatInterface: React.FC = () => {
           <div className="flex space-x-2">
             <textarea
               value={currentAnswer}
-              onChange={(e) => setCurrentAnswer(e.target.value)}
+              onChange={(e) => {
+                setCurrentAnswer(e.target.value);
+                // Start timer when user begins typing, if not already started
+                if (e.target.value.length === 1 && !timerRef.current && currentQuestion && !isPaused && currentCandidate?.status === 'in-progress') {
+                  startTimer();
+                }
+              }}
               placeholder="Type your answer here..."
               className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none"
               rows={3}
