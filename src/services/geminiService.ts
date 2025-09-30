@@ -7,20 +7,25 @@ export async function generateQuestion(
   resumeText: string,
   previousQuestions: string[] = []
 ): Promise<string> {
-  try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-002' });
+  const maxRetries = 3;
 
-    // Extract candidate skills first to tailor questions
-    const skills = await extractCandidateSkills(resumeText);
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-002' });
 
-    // Create difficulty-appropriate prompts
-    const difficultyPrompts = {
-      easy: `Generate a basic technical question suitable for a junior developer. Focus on fundamental concepts, syntax, and basic problem-solving.`,
-      medium: `Generate an intermediate technical question suitable for a mid-level developer. Include practical implementation, best practices, and architectural decisions.`,
-      hard: `Generate an advanced technical question suitable for a senior developer. Focus on system design, scalability, performance optimization, and complex problem-solving.`
-    };
+      // Extract candidate skills first to tailor questions
+      const skills = await extractCandidateSkills(resumeText);
 
-    const prompt = `You are an expert technical interviewer. Generate ONE original technical interview question based on the candidate's resume and skills.
+      // Create difficulty-appropriate prompts
+      const difficultyPrompts = {
+        easy: `Generate a basic technical question suitable for a junior developer. Focus on fundamental concepts, syntax, and basic problem-solving.`,
+        medium: `Generate an intermediate technical question suitable for a mid-level developer. Include practical implementation, best practices, and architectural decisions.`,
+        hard: `Generate an advanced technical question suitable for a senior developer. Focus on system design, scalability, performance optimization, and complex problem-solving.`
+      };
+
+      const prompt = `You are an expert technical interviewer. Generate ONE COMPLETELY UNIQUE technical interview question based on the candidate's resume and skills.
+
+CRITICAL: NEVER REPEAT ANY PREVIOUS QUESTIONS. Each question must be entirely different in topic, concept, and wording.
 
 CANDIDATE SKILLS & EXPERIENCE:
 - Technologies: ${skills.technologies.join(', ')}
@@ -34,11 +39,14 @@ QUESTION REQUIREMENTS:
 - Make it practical and job-related
 - Avoid questions about technologies not mentioned in their resume
 - Keep it concise but comprehensive
+- MOST IMPORTANT: The question MUST be completely unique and different from all previous questions
 
-${previousQuestions.length > 0 ? `PREVIOUS QUESTIONS (DO NOT REPEAT):
+${previousQuestions.length > 0 ? `STRICTLY FORBIDDEN QUESTIONS (DO NOT ASK ANY OF THESE):
 ${previousQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
 
-Generate a DIFFERENT question that hasn't been asked before.` : ''}
+WARNING: If you generate any question similar to the ones above, it will be considered a critical failure.
+You MUST create a question on a completely different topic, technology, or concept.
+Choose a different aspect of their skills or experience that hasn't been tested yet.` : ''}
 
 QUESTION FORMAT:
 Return ONLY the question text, nothing else. Make it clear and professional.
@@ -46,51 +54,116 @@ Return ONLY the question text, nothing else. Make it clear and professional.
 RESUME CONTEXT:
 ${resumeText.substring(0, 1500)}`;
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const question = response.text().trim();
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const question = response.text().trim();
 
-    // Clean up the response
-    const cleanQuestion = question.replace(/^["']|["']$/g, '').trim();
+      // Clean up the response
+      const cleanQuestion = question.replace(/^["']|["']$/g, '').trim();
 
-    // Fallback if AI fails
-    if (!cleanQuestion || cleanQuestion.length < 10) {
-      return getFallbackQuestion(difficulty);
+      // Check if the question is unique (not too similar to previous questions)
+      if (cleanQuestion && cleanQuestion.length >= 10 && isQuestionUnique(cleanQuestion, previousQuestions)) {
+        return cleanQuestion;
+      }
+
+      // If not unique or too short, try again
+      console.warn(`Attempt ${attempt + 1}: Generated question was not unique or too short, retrying...`);
+      if (attempt === maxRetries - 1) {
+        // Last attempt, use fallback
+        return getFallbackQuestion(difficulty, previousQuestions);
+      }
+
+    } catch (error) {
+      console.error(`Error generating question (attempt ${attempt + 1}):`, error);
+      if (attempt === maxRetries - 1) {
+        // Last attempt, use fallback
+        return getFallbackQuestion(difficulty, previousQuestions);
+      }
+    }
+  }
+
+  // This should never be reached, but just in case
+  return getFallbackQuestion(difficulty, previousQuestions);
+}
+
+// Helper function to check if a question is unique compared to previous questions
+function isQuestionUnique(question: string, previousQuestions: string[]): boolean {
+  if (previousQuestions.length === 0) return true;
+
+  const normalizedQuestion = question.toLowerCase().trim();
+
+  for (const prevQuestion of previousQuestions) {
+    const normalizedPrev = prevQuestion.toLowerCase().trim();
+
+    // Exact match
+    if (normalizedQuestion === normalizedPrev) {
+      return false;
     }
 
-    return cleanQuestion;
-  } catch (error) {
-    console.error('Error generating question with AI:', error);
-    // Fallback to a basic question if AI fails
-    return getFallbackQuestion(difficulty);
+    // Check for high similarity (simple word overlap check)
+    const questionWords = new Set(normalizedQuestion.split(/\s+/).filter(word => word.length > 3));
+    const prevWords = new Set(normalizedPrev.split(/\s+/).filter(word => word.length > 3));
+
+    const intersection = new Set([...questionWords].filter(word => prevWords.has(word)));
+    const union = new Set([...questionWords, ...prevWords]);
+
+    const similarity = intersection.size / union.size;
+
+    // If more than 60% word overlap, consider it too similar
+    if (similarity > 0.6) {
+      return false;
+    }
   }
+
+  return true;
 }
 
 // Fallback function for when AI fails
-function getFallbackQuestion(difficulty: 'easy' | 'medium' | 'hard'): string {
+function getFallbackQuestion(difficulty: 'easy' | 'medium' | 'hard', previousQuestions: string[] = []): string {
   const fallbacks = {
     easy: [
       "Explain the difference between var, let, and const in JavaScript.",
       "What is the purpose of the useState hook in React?",
       "How do you handle events in React components?",
-      "What is the difference between props and state in React?"
+      "What is the difference between props and state in React?",
+      "How do you create a functional component in React?",
+      "What is JSX and how does it work?",
+      "Explain the component lifecycle in React.",
+      "How do you pass data between parent and child components?"
     ],
     medium: [
       "How would you optimize a React component's performance?",
       "Explain how you would implement error handling in a React application.",
       "What are the benefits of using TypeScript in a React project?",
-      "How do you manage state in a complex React application?"
+      "How do you manage state in a complex React application?",
+      "Explain the concept of React Context and when to use it.",
+      "How would you implement routing in a React application?",
+      "What are React hooks and how do they differ from class components?",
+      "How do you handle asynchronous operations in React?"
     ],
     hard: [
       "Design a scalable architecture for a React application with multiple data sources.",
       "How would you implement authentication and authorization in a full-stack application?",
       "Explain your approach to testing a complex React application.",
-      "How would you optimize bundle size and loading performance in a large React app?"
+      "How would you optimize bundle size and loading performance in a large React app?",
+      "Describe your strategy for state management in a large-scale React application.",
+      "How would you implement code splitting and lazy loading in React?",
+      "Explain how you would handle security vulnerabilities in a React application.",
+      "Design a microservices architecture for a complex web application."
     ]
   };
 
   const questions = fallbacks[difficulty];
-  return questions[Math.floor(Math.random() * questions.length)];
+
+  // Filter out questions that are too similar to previous ones
+  const availableQuestions = questions.filter(q => isQuestionUnique(q, previousQuestions));
+
+  if (availableQuestions.length === 0) {
+    // If all fallback questions are used, return a generic one
+    return `Describe your experience with ${difficulty} level development tasks.`;
+  }
+
+  return availableQuestions[Math.floor(Math.random() * availableQuestions.length)];
 }
 
 export async function calculateScore(
